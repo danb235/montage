@@ -30,6 +30,12 @@ ENV/
 .AppleDouble
 .LSOverride
 
+# Testing/Coverage
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
 # Project-specific (user data)
 videos/
 projects/

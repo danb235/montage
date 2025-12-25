@@ -24,8 +24,13 @@ import osxphotos
 import questionary
 from rich.console import Console
 from rich.progress import (
-    Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn,
-    TimeElapsedColumn, TimeRemainingColumn
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
 )
 from rich.table import Table
 
@@ -57,11 +62,20 @@ def _test_encoder(encoder: str, timeout: int = 10) -> bool:
 
         # Generate test pattern and encode
         cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=30",
-            "-c:v", encoder,
-            "-t", "1",
-            str(test_output)
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=320x240:rate=30",
+            "-c:v",
+            encoder,
+            "-t",
+            "1",
+            str(test_output),
         ]
 
         # Add encoder-specific flags for VideoToolbox
@@ -72,20 +86,17 @@ def _test_encoder(encoder: str, timeout: int = 10) -> bool:
         try:
             subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
             return test_output.exists() and test_output.stat().st_size > 0
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+        ):
             return False
 
 
 def _get_encoder_settings(encoder: str) -> dict:
     """Get optimal settings for each encoder type."""
-    if encoder == "hevc_videotoolbox":
-        return {
-            "quality_flag": "-q:v",
-            "quality_values": {"high": "50", "balanced": "60", "fast": "70"},
-            "extra_args": ["-allow_sw", "1"],
-            "pix_fmt": "yuv420p",
-        }
-    elif encoder == "h264_videotoolbox":
+    if encoder == "hevc_videotoolbox" or encoder == "h264_videotoolbox":
         return {
             "quality_flag": "-q:v",
             "quality_values": {"high": "50", "balanced": "60", "fast": "70"},
@@ -138,15 +149,16 @@ def detect_best_encoder(codec: str = "hevc") -> tuple[str, dict, list[str]]:
     return result
 
 
-def format_size(size_bytes: int) -> str:
+def format_size(size_bytes: int | None) -> str:
     """Format bytes to human readable size."""
     if size_bytes is None:
         return "Unknown"
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
 
 
 def format_duration(seconds: float) -> str:
@@ -160,7 +172,9 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {secs:.0f}s"
 
 
-def generate_output_filename(start_date: datetime, end_date: datetime, people: list[str] | None) -> str:
+def generate_output_filename(
+    start_date: datetime, end_date: datetime, people: list[str] | None
+) -> str:
     """
     Generate sortable output filename from date range and people.
 
@@ -206,7 +220,7 @@ def prompt_date_range() -> tuple[datetime, datetime]:
 
     start_str = questionary.text(
         "Start date (YYYY-MM-DD):",
-        validate=lambda x: validate_date(x) or "Please enter a valid date (YYYY-MM-DD)"
+        validate=lambda x: validate_date(x) or "Please enter a valid date (YYYY-MM-DD)",
     ).ask()
 
     if start_str is None:
@@ -214,14 +228,16 @@ def prompt_date_range() -> tuple[datetime, datetime]:
 
     end_str = questionary.text(
         "End date (YYYY-MM-DD):",
-        validate=lambda x: validate_date(x) or "Please enter a valid date (YYYY-MM-DD)"
+        validate=lambda x: validate_date(x) or "Please enter a valid date (YYYY-MM-DD)",
     ).ask()
 
     if end_str is None:
         sys.exit(0)
 
     start_date = datetime.strptime(start_str, "%Y-%m-%d")
-    end_date = datetime.strptime(end_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    end_date = datetime.strptime(end_str, "%Y-%m-%d").replace(
+        hour=23, minute=59, second=59
+    )
 
     return start_date, end_date
 
@@ -234,10 +250,7 @@ def query_videos(start_date: datetime, end_date: datetime) -> list:
 
     # Query all movies in date range
     photos = photosdb.photos(
-        movies=True,
-        images=False,
-        from_date=start_date,
-        to_date=end_date
+        movies=True, images=False, from_date=start_date, to_date=end_date
     )
 
     # Filter to only include non-trashed videos
@@ -271,7 +284,7 @@ def prompt_people_selection(persons: list[str]) -> list[str] | None:
 
     selected = questionary.checkbox(
         "Select people to include (space to select, enter to confirm):",
-        choices=[c["name"] for c in choices]
+        choices=[c["name"] for c in choices],
     ).ask()
 
     if selected is None:
@@ -285,7 +298,7 @@ def prompt_people_selection(persons: list[str]) -> list[str] | None:
     return selected
 
 
-def filter_by_people(videos: list, selected_people: list[str]) -> list:
+def filter_by_people(videos: list, selected_people: list[str] | None) -> list:
     """Filter videos to only include those with selected people."""
     if selected_people is None:
         return videos
@@ -308,7 +321,7 @@ def prompt_quality_selection() -> str:
             "Balanced (good quality)",
             "Fast (preview quality)",
         ],
-        default="Auto (GPU if available)"
+        default="Auto (GPU if available)",
     ).ask()
 
     if quality is None:
@@ -322,16 +335,14 @@ def prompt_duration_filter() -> tuple[float | None, float | None]:
     console.print("\n[bold]Step 3: Duration Filter[/bold]")
 
     min_str = questionary.text(
-        "Minimum duration in seconds (press Enter for no minimum):",
-        default=""
+        "Minimum duration in seconds (press Enter for no minimum):", default=""
     ).ask()
 
     if min_str is None:
         sys.exit(0)
 
     max_str = questionary.text(
-        "Maximum duration in seconds (press Enter for no maximum):",
-        default=""
+        "Maximum duration in seconds (press Enter for no maximum):", default=""
     ).ask()
 
     if max_str is None:
@@ -353,7 +364,9 @@ def prompt_duration_filter() -> tuple[float | None, float | None]:
     return min_dur, max_dur
 
 
-def filter_by_duration(videos: list, min_dur: float | None, max_dur: float | None) -> list:
+def filter_by_duration(
+    videos: list, min_dur: float | None, max_dur: float | None
+) -> list:
     """Filter videos by duration."""
     if min_dur is None and max_dur is None:
         return videos
@@ -411,7 +424,7 @@ def display_video_summary(videos: list) -> None:
             format_duration(duration),
             people or "-",
             location or "-",
-            format_size(size)
+            format_size(size),
         )
 
         total_size += size
@@ -423,16 +436,20 @@ def display_video_summary(videos: list) -> None:
     num_transitions = max(0, len(videos) - 1)
     output_duration = total_duration - (num_transitions * TRANSITION_DURATION)
 
-    console.print(f"\n[bold]Summary:[/bold]")
+    console.print("\n[bold]Summary:[/bold]")
     console.print(f"  Total videos: {len(videos)}")
     console.print(f"  Total size: {format_size(total_size)}")
     console.print(f"  Total duration: {format_duration(total_duration)}")
-    console.print(f"  Estimated output: {format_duration(output_duration)} (with {num_transitions} transitions)")
+    console.print(
+        f"  Estimated output: {format_duration(output_duration)} (with {num_transitions} transitions)"
+    )
 
     # Check for iCloud-only videos
     missing_count = sum(1 for v in videos if v.ismissing)
     if missing_count > 0:
-        console.print(f"\n[yellow]Note: {missing_count} videos are in iCloud and will be downloaded[/yellow]")
+        console.print(
+            f"\n[yellow]Note: {missing_count} videos are in iCloud and will be downloaded[/yellow]"
+        )
 
 
 def export_videos(videos: list) -> dict[str, Path]:
@@ -451,7 +468,7 @@ def export_videos(videos: list) -> dict[str, Path]:
         TaskProgressColumn(),
         TimeElapsedColumn(),
         TimeRemainingColumn(),
-        console=console
+        console=console,
     ) as progress:
         task = progress.add_task("Exporting...", total=len(sorted_videos))
 
@@ -459,7 +476,11 @@ def export_videos(videos: list) -> dict[str, Path]:
             dest_path = VIDEOS_DIR / f"{v.uuid}.mov"
 
             if dest_path.exists():
-                progress.update(task, advance=1, description=f"[dim]Cached: {v.original_filename}[/dim]")
+                progress.update(
+                    task,
+                    advance=1,
+                    description=f"[dim]Cached: {v.original_filename}[/dim]",
+                )
                 exported[v.uuid] = dest_path
                 continue
 
@@ -470,7 +491,7 @@ def export_videos(videos: list) -> dict[str, Path]:
                 results = v.export(
                     str(VIDEOS_DIR),
                     use_photos_export=True,
-                    timeout=300  # 5 minute timeout for large files
+                    timeout=300,  # 5 minute timeout for large files
                 )
 
                 if results:
@@ -489,18 +510,21 @@ def export_videos(videos: list) -> dict[str, Path]:
     return exported
 
 
-def create_playlist(videos: list, project_name: str, filters: dict, exported: dict[str, Path]) -> Path:
+def create_playlist(
+    videos: list, project_name: str, filters: dict, exported: dict[str, Path]
+) -> Path:
     """Create playlist JSON for the project."""
     projects_dir = PROJECTS_DIR / project_name
     projects_dir.mkdir(parents=True, exist_ok=True)
 
     sorted_videos = sorted(videos, key=lambda x: x.date)
 
+    videos_list: list[dict] = []
     playlist = {
         "created": datetime.now().isoformat(),
         "project_name": project_name,
         "filters": filters,
-        "videos": []
+        "videos": videos_list,
     }
 
     for v in sorted_videos:
@@ -510,17 +534,19 @@ def create_playlist(videos: list, project_name: str, filters: dict, exported: di
         duration = v.exif_info.duration if v.exif_info else 0
         is_portrait = v.height > v.width if v.height and v.width else False
 
-        playlist["videos"].append({
-            "uuid": v.uuid,
-            "date": v.date.isoformat(),
-            "duration": duration,
-            "filename": v.original_filename,
-            "persons": v.persons,
-            "is_portrait": is_portrait,
-            "width": v.width,
-            "height": v.height,
-            "path": str(exported[v.uuid].absolute())
-        })
+        videos_list.append(
+            {
+                "uuid": v.uuid,
+                "date": v.date.isoformat(),
+                "duration": duration,
+                "filename": v.original_filename,
+                "persons": v.persons,
+                "is_portrait": is_portrait,
+                "width": v.width,
+                "height": v.height,
+                "path": str(exported[v.uuid].absolute()),
+            }
+        )
 
     playlist_path = projects_dir / "playlist.json"
     playlist_path.write_text(json.dumps(playlist, indent=2))
@@ -549,7 +575,9 @@ def build_landscape_filter(input_idx: int) -> str:
     )
 
 
-def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)") -> Path:
+def compile_movie(
+    playlist_path: Path, quality: str = "Auto (GPU if available)"
+) -> Path | None:
     """Compile videos into a single movie using ffmpeg."""
     console.print("\n[bold]Step 7: Compiling Movie[/bold]\n")
 
@@ -564,14 +592,20 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
         if encoder == "libx265":
             # CPU fallback - explain why
             failed_encoders = [ENCODER_NAMES.get(e, e) for e in tested]
-            console.print(f"[yellow]No GPU encoder available[/yellow]")
+            console.print("[yellow]No GPU encoder available[/yellow]")
             console.print(f"[dim]Tested: {', '.join(failed_encoders)}[/dim]")
-            console.print(f"[dim]This may be due to missing drivers, unsupported hardware,[/dim]")
-            console.print(f"[dim]or FFmpeg compiled without hardware encoder support.[/dim]")
-            console.print(f"[cyan]Using: {encoder_name} (slower but works everywhere)[/cyan]")
+            console.print(
+                "[dim]This may be due to missing drivers, unsupported hardware,[/dim]"
+            )
+            console.print(
+                "[dim]or FFmpeg compiled without hardware encoder support.[/dim]"
+            )
+            console.print(
+                f"[cyan]Using: {encoder_name} (slower but works everywhere)[/cyan]"
+            )
         else:
             # GPU encoder found
-            console.print(f"[green]GPU encoder detected![/green]")
+            console.print("[green]GPU encoder detected![/green]")
             console.print(f"[cyan]Using: {encoder_name}[/cyan]")
     else:
         # Manual quality selection - use CPU encoder
@@ -582,7 +616,9 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
             "Balanced (good quality)": "balanced",
             "Fast (preview quality)": "fast",
         }.get(quality, "balanced")
-        console.print(f"[cyan]Using: {ENCODER_NAMES.get(encoder, encoder)} ({quality_tier})[/cyan]")
+        console.print(
+            f"[cyan]Using: {ENCODER_NAMES.get(encoder, encoder)} ({quality_tier})[/cyan]"
+        )
 
     console.print()  # Blank line before progress info
 
@@ -624,13 +660,15 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
             filter_parts.append(build_landscape_filter(i))
 
         # Audio normalization
-        filter_parts.append(f"[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}]")
+        filter_parts.append(
+            f"[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{i}]"
+        )
 
     # Build xfade chain for video
     if len(videos) == 1:
         # Single video - just use normalized output
-        filter_parts.append(f"[v0]null[vout]")
-        filter_parts.append(f"[a0]anull[aout]")
+        filter_parts.append("[v0]null[vout]")
+        filter_parts.append("[a0]anull[aout]")
     else:
         # Multiple videos - chain xfade transitions
         cumulative_duration = 0
@@ -640,11 +678,11 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
                 v_in1 = f"[v{i}]"
                 a_in1 = f"[a{i}]"
             else:
-                v_in1 = f"[vt{i-1}]"
-                a_in1 = f"[at{i-1}]"
+                v_in1 = f"[vt{i - 1}]"
+                a_in1 = f"[at{i - 1}]"
 
-            v_in2 = f"[v{i+1}]"
-            a_in2 = f"[a{i+1}]"
+            v_in2 = f"[v{i + 1}]"
+            a_in2 = f"[a{i + 1}]"
 
             # Calculate offset: cumulative duration minus transitions already applied
             offset = cumulative_duration + videos[i]["duration"] - TRANSITION_DURATION
@@ -669,14 +707,22 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
     # Build encoder-specific command
     cmd = ["ffmpeg", "-y"]
     cmd.extend(inputs)
-    cmd.extend([
-        "-filter_complex", filter_complex,
-        "-map", "[vout]",
-        "-map", "[aout]",
-        "-c:v", encoder,
-        "-pix_fmt", enc_settings["pix_fmt"],
-        enc_settings["quality_flag"], enc_settings["quality_values"][quality_tier],
-    ])
+    cmd.extend(
+        [
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[vout]",
+            "-map",
+            "[aout]",
+            "-c:v",
+            encoder,
+            "-pix_fmt",
+            enc_settings["pix_fmt"],
+            enc_settings["quality_flag"],
+            enc_settings["quality_values"][quality_tier],
+        ]
+    )
 
     # Add encoder-specific extra args
     cmd.extend(enc_settings.get("extra_args", []))
@@ -687,13 +733,19 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
         if quality_tier == "high":
             cmd.extend(["-tune", "fastdecode", "-x265-params", "aq-mode=3"])
 
-    cmd.extend([
-        "-tag:v", "hvc1",  # For Apple compatibility
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart",
-        str(output_path)
-    ])
+    cmd.extend(
+        [
+            "-tag:v",
+            "hvc1",  # For Apple compatibility
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-movflags",
+            "+faststart",
+            str(output_path),
+        ]
+    )
 
     # Show command info
     console.print("[dim]Running ffmpeg...[/dim]")
@@ -706,7 +758,7 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            universal_newlines=True
+            universal_newlines=True,
         )
 
         # Use Rich progress bar instead of raw ffmpeg output
@@ -717,23 +769,30 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
-            console=console
+            console=console,
         ) as progress:
             task = progress.add_task("Encoding...", total=total_duration)
 
+            assert process.stdout is not None
             for line in process.stdout:
                 # Parse time=HH:MM:SS.ms from ffmpeg output
                 if "time=" in line:
-                    time_match = re.search(r'time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})', line)
+                    time_match = re.search(
+                        r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})", line
+                    )
                     if time_match:
                         h, m, s, ms = map(int, time_match.groups())
                         current_seconds = h * 3600 + m * 60 + s + ms / 100
-                        progress.update(task, completed=min(current_seconds, total_duration))
+                        progress.update(
+                            task, completed=min(current_seconds, total_duration)
+                        )
 
         process.wait()
 
         if process.returncode == 0:
-            console.print(f"\n[bold green]Movie created successfully: {output_path}[/bold green]")
+            console.print(
+                f"\n[bold green]Movie created successfully: {output_path}[/bold green]"
+            )
 
             # Show file size
             if output_path.exists():
@@ -742,25 +801,30 @@ def compile_movie(playlist_path: Path, quality: str = "Auto (GPU if available)")
 
             return output_path
         else:
-            console.print(f"\n[red]ffmpeg failed with return code {process.returncode}[/red]")
+            console.print(
+                f"\n[red]ffmpeg failed with return code {process.returncode}[/red]"
+            )
             return None
 
     except FileNotFoundError:
-        console.print("[red]ffmpeg not found. Please install with: brew install ffmpeg[/red]")
+        console.print(
+            "[red]ffmpeg not found. Please install with: brew install ffmpeg[/red]"
+        )
         return None
     except Exception as e:
         console.print(f"[red]Error running ffmpeg: {e}[/red]")
         return None
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Video Compiler")
     parser.add_argument(
-        "--recompile", "-r",
+        "--recompile",
+        "-r",
         type=str,
         metavar="PLAYLIST",
-        help="Recompile from existing playlist.json file"
+        help="Recompile from existing playlist.json file",
     )
     args = parser.parse_args()
 
@@ -771,7 +835,9 @@ def main():
             console.print(f"[red]Playlist not found: {playlist_path}[/red]")
             sys.exit(1)
 
-        console.print(f"\n[bold cyan]Recompiling: {playlist_path.parent.name}[/bold cyan]\n")
+        console.print(
+            f"\n[bold cyan]Recompiling: {playlist_path.parent.name}[/bold cyan]\n"
+        )
 
         # Delete existing output files (could have descriptive name)
         existing_outputs = list(playlist_path.parent.glob("*.mp4"))
@@ -834,12 +900,14 @@ def main():
 
     # Generate default project name using same sortable format as output filename
     default_name = generate_output_filename(start_date, end_date, selected_people)
-    default_name = default_name.removesuffix(".mp4")  # Remove .mp4 extension for folder name
+    default_name = default_name.removesuffix(
+        ".mp4"
+    )  # Remove .mp4 extension for folder name
 
     project_name = questionary.text(
         "Project name:",
         default=default_name,
-        validate=lambda x: bool(x.strip()) or "Please enter a project name"
+        validate=lambda x: bool(x.strip()) or "Please enter a project name",
     ).ask()
 
     if not project_name:
@@ -851,7 +919,7 @@ def main():
         "end_date": end_date.isoformat(),
         "people": selected_people,
         "min_duration": min_dur,
-        "max_duration": max_dur
+        "max_duration": max_dur,
     }
 
     playlist_path = create_playlist(videos, project_name, filters, exported)
@@ -863,10 +931,10 @@ def main():
         output_path = compile_movie(playlist_path, quality)
 
         if output_path:
-            console.print(f"\n[bold green]Done![/bold green]")
+            console.print("\n[bold green]Done![/bold green]")
             console.print(f"[dim]Project folder: {playlist_path.parent}[/dim]")
     else:
-        console.print(f"\n[dim]Playlist saved. Run later with the playlist file.[/dim]")
+        console.print("\n[dim]Playlist saved. Run later with the playlist file.[/dim]")
         console.print(f"[dim]Project folder: {playlist_path.parent}[/dim]")
 
 
