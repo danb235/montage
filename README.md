@@ -93,7 +93,7 @@ Found 47 videos from this period.
 
 📊 Total: 47 videos | 2.3 GB | ~18 minutes of footage
 
-📁 Project name [december-2025]:
+📁 Project name [2025.12.01.to.2025.12.31.All]:
 
 ✅ Proceed with export? [Y/n]: y
 
@@ -107,7 +107,7 @@ Exporting videos... ━━━━━━━━━━━━━━━━━━━━
 
 Compiling... ━━━━━━━━━━━━━━━━━━━━ 100%
 
-✅ Created: projects/december-2025/output.mp4 (186 MB)
+✅ Created: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4 (186 MB)
 ```
 
 ### Example 2: Compilation Featuring Specific People
@@ -160,9 +160,9 @@ Filtering by duration... 31 videos remaining.
 Already created a project but want better quality? Recompile without re-exporting:
 
 ```
-$ python main.py --recompile projects/december-2025/playlist.json
+$ python main.py --recompile projects/2025.12.01.to.2025.12.31.All/playlist.json
 
-📂 Loaded project: december-2025
+📂 Loaded project: 2025.12.01.to.2025.12.31.All
    47 videos | Last compiled: 2025-12-20
 
 🎬 Select quality:
@@ -173,12 +173,12 @@ $ python main.py --recompile projects/december-2025/playlist.json
 
 Compiling with high quality... ━━━━━━━━━━━━━━━━━━━━ 100%
 
-✅ Created: projects/december-2025/output.mp4 (312 MB)
+✅ Created: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4 (312 MB)
 ```
 
 Shorthand:
 ```bash
-python main.py -r projects/december-2025/playlist.json
+python main.py -r projects/2025.12.01.to.2025.12.31.All/playlist.json
 ```
 
 ---
@@ -228,9 +228,9 @@ montage/
 │   ├── <uuid>.mov
 │   └── ...
 └── projects/            # Your compilation projects (auto-created)
-    └── december-2025/
-        ├── playlist.json   # Video list + metadata
-        └── output.mp4      # Final compiled video
+    └── 2025.12.01.to.2025.12.31.All/
+        ├── playlist.json                    # Video list + metadata
+        └── 2025.12.01.to.2025.12.31.All.mp4 # Final compiled video
 ```
 
 ### The playlist.json File
