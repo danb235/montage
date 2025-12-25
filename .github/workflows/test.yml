@@ -70,12 +70,26 @@ jobs:
           pip install pytest pytest-mock pytest-cov freezegun questionary rich
 
       - name: Run tests with coverage
-        run: pytest tests/ -v --cov=main --cov-report=xml --cov-report=term-missing
+        run: |
+          pytest tests/ -v --cov=main --cov-report=xml --cov-report=html --cov-report=term-missing
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.xml
-          fail_ci_if_error: false
-          verbose: true
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+      - name: Coverage summary
+        run: |
+          echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.attrib.get('line-rate', 0)) * 100
+          print(f'| Metric | Value |')
+          print(f'|--------|-------|')
+          print(f'| Line Coverage | {line_rate:.1f}% |')
+          " >> $GITHUB_STEP_SUMMARY
