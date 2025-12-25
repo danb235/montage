@@ -209,13 +209,15 @@ python main.py -r projects/2025.12.01.to.2025.12.31.All/playlist.json
 
 ### Hardware Acceleration
 
-Montage automatically detects and uses the best available encoder:
+Montage automatically detects and uses the best available encoder for your Mac:
 
-| Platform | Preferred Encoder       | Fallback        |
-|----------|-------------------------|-----------------|
-| macOS    | VideoToolbox (GPU)      | libx265 (CPU)   |
-| Windows  | NVENC / QuickSync / AMF | libx265 (CPU)   |
-| Linux    | NVENC / VAAPI           | libx265 (CPU)   |
+| Encoder | Mac Support | Notes |
+|---------|-------------|-------|
+| VideoToolbox HEVC | 2017+ / Apple Silicon | Fastest, best quality |
+| VideoToolbox H.264 | 2011+ | Fallback for older Macs |
+| libx265 (CPU) | All Macs | Final fallback |
+
+**Recommended:** Apple Silicon Macs (M1/M2/M3/M4) provide the best performance using the dedicated Media Engine.
 
 ---
 

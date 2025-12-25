@@ -13,7 +13,6 @@ Usage:
 
 import argparse
 import json
-import platform
 import re
 import subprocess
 import sys
@@ -40,11 +39,8 @@ TRANSITION_DURATION = 1  # seconds
 
 # Human-readable encoder names for user feedback
 ENCODER_NAMES = {
-    "hevc_videotoolbox": "Apple VideoToolbox (Metal GPU)",
-    "hevc_nvenc": "NVIDIA NVENC (CUDA GPU)",
-    "hevc_amf": "AMD AMF (GPU)",
-    "hevc_vaapi": "VA-API (GPU)",
-    "hevc_qsv": "Intel Quick Sync (GPU)",
+    "hevc_videotoolbox": "VideoToolbox HEVC (GPU)",
+    "h264_videotoolbox": "VideoToolbox H.264 (GPU)",
     "libx265": "x265 (CPU)",
 }
 
@@ -68,10 +64,10 @@ def _test_encoder(encoder: str, timeout: int = 10) -> bool:
             str(test_output)
         ]
 
-        # Add encoder-specific flags
-        if encoder == "hevc_videotoolbox":
+        # Add encoder-specific flags for VideoToolbox
+        if encoder in ("hevc_videotoolbox", "h264_videotoolbox"):
             cmd.insert(-1, "-allow_sw")
-            cmd.insert(-1, "0")  # Require hardware, don't allow software fallback
+            cmd.insert(-1, "1")  # Allow software fallback for older Macs
 
         try:
             subprocess.run(cmd, capture_output=True, timeout=timeout, check=True)
@@ -87,34 +83,13 @@ def _get_encoder_settings(encoder: str) -> dict:
             "quality_flag": "-q:v",
             "quality_values": {"high": "50", "balanced": "60", "fast": "70"},
             "extra_args": ["-allow_sw", "1"],
-            "pix_fmt": "yuv420p",  # VideoToolbox doesn't support 10-bit
-        }
-    elif encoder == "hevc_nvenc":
-        return {
-            "quality_flag": "-cq",
-            "quality_values": {"high": "20", "balanced": "24", "fast": "28"},
-            "extra_args": ["-preset", "p4", "-tune", "hq"],
             "pix_fmt": "yuv420p",
         }
-    elif encoder == "hevc_amf":
+    elif encoder == "h264_videotoolbox":
         return {
-            "quality_flag": "-qp_i",
-            "quality_values": {"high": "20", "balanced": "24", "fast": "28"},
-            "extra_args": ["-quality", "quality"],
-            "pix_fmt": "yuv420p",
-        }
-    elif encoder == "hevc_vaapi":
-        return {
-            "quality_flag": "-qp",
-            "quality_values": {"high": "20", "balanced": "24", "fast": "28"},
-            "extra_args": ["-vaapi_device", "/dev/dri/renderD128"],
-            "pix_fmt": "vaapi",
-        }
-    elif encoder == "hevc_qsv":
-        return {
-            "quality_flag": "-global_quality",
-            "quality_values": {"high": "20", "balanced": "25", "fast": "30"},
-            "extra_args": [],
+            "quality_flag": "-q:v",
+            "quality_values": {"high": "50", "balanced": "60", "fast": "70"},
+            "extra_args": ["-allow_sw", "1"],
             "pix_fmt": "yuv420p",
         }
     else:  # libx265 (CPU fallback)
@@ -129,26 +104,25 @@ def _get_encoder_settings(encoder: str) -> dict:
 
 def detect_best_encoder(codec: str = "hevc") -> tuple[str, dict, list[str]]:
     """
-    Detect the best available encoder for the current platform.
+    Detect the best available encoder for macOS.
     Returns (encoder_name, encoder_settings, tested_encoders).
 
-    Tests hardware encoders in priority order, falls back to CPU.
+    Tests VideoToolbox encoders in priority order, falls back to CPU.
     Results are cached for the session.
+
+    Encoder priority:
+    1. hevc_videotoolbox - HEVC hardware (Macs 2017+, Apple Silicon)
+    2. h264_videotoolbox - H.264 hardware (broader support, Macs 2011+)
+    3. libx265 - CPU fallback (works on all Macs)
     """
-    cache_key = f"{platform.system()}_{codec}"
+    cache_key = f"darwin_{codec}"
     if cache_key in _encoder_cache:
         return _encoder_cache[cache_key]
 
-    system = platform.system()
     tested = []  # Track what we tested for user feedback
 
-    # Define encoder priority by platform
-    if system == "Darwin":  # macOS
-        hw_encoders = ["hevc_videotoolbox"]
-    elif system == "Windows":
-        hw_encoders = ["hevc_nvenc", "hevc_qsv", "hevc_amf"]
-    else:  # Linux
-        hw_encoders = ["hevc_nvenc", "hevc_vaapi"]
+    # macOS encoder priority: HEVC GPU -> H.264 GPU -> CPU
+    hw_encoders = ["hevc_videotoolbox", "h264_videotoolbox"]
 
     # Test each hardware encoder
     for encoder in hw_encoders:
