@@ -36,7 +36,7 @@ Montage is a command-line tool for macOS that queries your Photos app, lets you 
 brew install ffmpeg
 
 # Clone the repository
-git clone https://github.com/yourusername/montage.git
+git clone https://github.com/danb235/montage.git
 cd montage
 
 # Create virtual environment with Python 3.11
