@@ -33,6 +33,10 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::pytest_mock.PytestMockWarning",
+    "ignore:install \"ipywidgets\" for Jupyter support:UserWarning",
+]
 
 [tool.coverage.run]
 source = ["main"]
