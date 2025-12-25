@@ -66,21 +66,21 @@ Create a compilation of all videos from December 2025:
 ```
 $ python main.py
 
-📅 Enter start date (YYYY-MM-DD): 2025-12-01
-📅 Enter end date (YYYY-MM-DD): 2025-12-31
+Start date (YYYY-MM-DD): 2025-12-01
+End date (YYYY-MM-DD): 2025-12-31
 
-Found 47 videos from this period.
+Found 47 videos in date range
 
-👥 Select people to include:
-  ◉ All (include all videos)
+Select people to include (space to select, enter to confirm):
+  ○ ALL (include all videos)
   ○ Casey
   ○ Jessica
   ○ Grandma
 
-> Selected: All
+> Including all videos
 
-⏱️  Minimum duration (seconds, or Enter to skip):
-⏱️  Maximum duration (seconds, or Enter to skip):
+Minimum duration in seconds (press Enter for no minimum):
+Maximum duration in seconds (press Enter for no maximum):
 
 ┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
 ┃ Date               ┃ Duration ┃ People            ┃ Size       ┃
@@ -91,23 +91,30 @@ Found 47 videos from this period.
 │ ...                │ ...      │ ...               │ ...        │
 └────────────────────┴──────────┴───────────────────┴────────────┘
 
-📊 Total: 47 videos | 2.3 GB | ~18 minutes of footage
+Summary:
+  Total videos: 47
+  Total size: 2.3 GB
+  Total duration: ~18 minutes
+  Estimated output: ~17 minutes (with 46 transitions)
 
-📁 Project name [2025.12.01.to.2025.12.31.All]:
+Project name: [2025.12.01.to.2025.12.31.All]
 
-✅ Proceed with export? [Y/n]: y
+Proceed to copy videos? [Y/n]: y
 
-Exporting videos... ━━━━━━━━━━━━━━━━━━━━ 100% 47/47
+Exporting... ━━━━━━━━━━━━━━━━━━━━ 100% 47/47
 
-🎬 Select quality:
-  ◉ Auto (GPU if available)
-  ○ High (best quality, slower)
-  ○ Balanced
-  ○ Fast (preview)
+Generate final movie now? [Y/n]: y
 
-Compiling... ━━━━━━━━━━━━━━━━━━━━ 100%
+Encoding quality:
+  > Auto (GPU if available)
+    High (best quality, slower)
+    Balanced (good quality)
+    Fast (preview quality)
 
-✅ Created: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4 (186 MB)
+Encoding... ━━━━━━━━━━━━━━━━━━━━ 100%
+
+Movie created successfully: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4
+Output size: 186 MB
 ```
 
 ### Example 2: Compilation Featuring Specific People
@@ -117,21 +124,21 @@ Make a highlight reel of just your kids from the past 3 months:
 ```
 $ python main.py
 
-📅 Enter start date (YYYY-MM-DD): 2025-10-01
-📅 Enter end date (YYYY-MM-DD): 2025-12-31
+Start date (YYYY-MM-DD): 2025-10-01
+End date (YYYY-MM-DD): 2025-12-31
 
-Found 156 videos from this period.
+Found 156 videos in date range
 
-👥 Select people to include:
-  ○ All (include all videos)
+Select people to include (space to select, enter to confirm):
+  ○ ALL (include all videos)
   ◉ Casey
   ◉ Emma
   ○ Jessica
   ○ Mike
 
-> Selected: Casey, Emma
+> Filtering to: Casey, Emma
 
-Filtering... Found 43 videos featuring Casey or Emma.
+Found 43 videos featuring Casey or Emma.
 ```
 
 ### Example 3: Filter by Duration
@@ -141,18 +148,19 @@ Exclude very short clips (under 5 seconds) and very long recordings (over 2 minu
 ```
 $ python main.py
 
-📅 Enter start date (YYYY-MM-DD): 2025-12-01
-📅 Enter end date (YYYY-MM-DD): 2025-12-31
+Start date (YYYY-MM-DD): 2025-12-01
+End date (YYYY-MM-DD): 2025-12-31
 
-Found 47 videos from this period.
+Found 47 videos in date range
 
-👥 Select people to include:
-> Selected: All
+Select people to include (space to select, enter to confirm):
+> Including all videos
 
-⏱️  Minimum duration (seconds, or Enter to skip): 5
-⏱️  Maximum duration (seconds, or Enter to skip): 120
+Minimum duration in seconds (press Enter for no minimum): 5
+Maximum duration in seconds (press Enter for no maximum): 120
 
-Filtering by duration... 31 videos remaining.
+Duration filter: min: 5s, max: 120s
+31 videos remaining.
 ```
 
 ### Example 4: Recompile with Different Quality
@@ -162,18 +170,18 @@ Already created a project but want better quality? Recompile without re-exportin
 ```
 $ python main.py --recompile projects/2025.12.01.to.2025.12.31.All/playlist.json
 
-📂 Loaded project: 2025.12.01.to.2025.12.31.All
-   47 videos | Last compiled: 2025-12-20
+Recompiling: 2025.12.01.to.2025.12.31.All
 
-🎬 Select quality:
-  ○ Auto (GPU if available)
-  ◉ High (best quality, slower)    <-- Choose higher quality
-  ○ Balanced
-  ○ Fast (preview)
+Encoding quality:
+    Auto (GPU if available)
+  > High (best quality, slower)    <-- Choose higher quality
+    Balanced (good quality)
+    Fast (preview quality)
 
-Compiling with high quality... ━━━━━━━━━━━━━━━━━━━━ 100%
+Encoding... ━━━━━━━━━━━━━━━━━━━━ 100%
 
-✅ Created: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4 (312 MB)
+Movie created successfully: projects/2025.12.01.to.2025.12.31.All/2025.12.01.to.2025.12.31.All.mp4
+Output size: 312 MB
 ```
 
 Shorthand:
@@ -252,7 +260,7 @@ This allows you to recompile with different quality settings without re-querying
 |-------------|---------|-------|
 | macOS       | 10.15+  | Required for Photos integration |
 | Python      | 3.11    | Specified in `.python-version` |
-| ffmpeg      | 4.0+    | Install via `brew install ffmpeg` |
+| ffmpeg      | 4.3+    | Install via `brew install ffmpeg` |
 
 ### Python Dependencies
 
