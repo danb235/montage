@@ -13,6 +13,8 @@ Montage is a command-line tool for macOS that queries your Photos app, lets you 
 - **Date Range Filtering** — Select videos from specific time periods (holidays, vacations, monthly highlights)
 - **People Filtering** — Leverage Photos' face recognition to include only videos featuring specific people
 - **Duration Filtering** — Exclude clips that are too short or too long
+- **Interactive Video Preview** — Watch each video and swipe right to keep or left to skip (Tinder-style)
+- **Video Rotation** — Fix sideways videos during preview; rotation is applied in final compilation
 - **Automatic Transitions** — 1-second fade transitions between clips with audio crossfade
 - **Smart Aspect Ratio Handling** — Portrait videos get a blurred background; landscape videos are letterboxed
 - **Hardware Acceleration** — Uses GPU encoding when available (VideoToolbox on Mac)
@@ -26,34 +28,36 @@ Montage is a command-line tool for macOS that queries your Photos app, lets you 
 ### Prerequisites
 
 - **macOS** (required — uses Apple Photos integration)
-- **Python 3.11**
+- **uv** (Python package manager — handles Python version automatically)
 - **ffmpeg** (for video encoding)
+- **mpv** (optional — for interactive video preview)
 
 ### Installation
 
 ```bash
-# Install ffmpeg (if not already installed)
-brew install ffmpeg
+# Install uv, ffmpeg, and mpv
+brew install uv ffmpeg mpv
 
 # Clone the repository
 git clone https://github.com/danb235/montage.git
 cd montage
 
-# Create virtual environment with Python 3.11
-python3.11 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+# Run! (uv automatically installs Python 3.11 and all dependencies)
+uv run montage
 ```
 
-### First Run
+That's it! No need to manually create virtual environments or install Python — **uv handles everything automatically**.
+
+### Alternative: Manual Setup
+
+If you prefer traditional pip:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 python main.py
 ```
-
-That's it! The interactive prompts will guide you through creating your first compilation.
 
 ---
 
@@ -64,7 +68,7 @@ That's it! The interactive prompts will guide you through creating your first co
 Create a compilation of all videos from December 2025:
 
 ```
-$ python main.py
+$ uv run montage
 
 Start date (YYYY-MM-DD): 2025-12-01
 End date (YYYY-MM-DD): 2025-12-31
@@ -106,10 +110,13 @@ Exporting... ━━━━━━━━━━━━━━━━━━━━ 100% 4
 Generate final movie now? [Y/n]: y
 
 Encoding quality:
-  > Auto (GPU if available)
-    High (best quality, slower)
-    Balanced (good quality)
-    Fast (preview quality)
+  > GPU - Balanced (fast, smaller files)
+    GPU - High (fast, good quality)
+    GPU - Fast (fastest, preview quality)
+    ──────────────
+    CPU - Balanced (moderate speed)
+    CPU - High (slow, best quality)
+    CPU - Fast (faster, lower quality)
 
 Encoding... ━━━━━━━━━━━━━━━━━━━━ 100%
 
@@ -122,7 +129,7 @@ Output size: 186 MB
 Make a highlight reel of just your kids from the past 3 months:
 
 ```
-$ python main.py
+$ uv run montage
 
 Start date (YYYY-MM-DD): 2025-10-01
 End date (YYYY-MM-DD): 2025-12-31
@@ -146,7 +153,7 @@ Found 43 videos featuring Casey or Emma.
 Exclude very short clips (under 5 seconds) and very long recordings (over 2 minutes):
 
 ```
-$ python main.py
+$ uv run montage
 
 Start date (YYYY-MM-DD): 2025-12-01
 End date (YYYY-MM-DD): 2025-12-31
@@ -163,20 +170,91 @@ Duration filter: min: 5s, max: 120s
 31 videos remaining.
 ```
 
-### Example 4: Recompile with Different Quality
+### Example 4: Interactive Video Preview (Tinder-style)
+
+Don't want all 47 videos? Preview each one and decide what to keep:
+
+```
+$ uv run montage
+
+Start date (YYYY-MM-DD): 2025-12-01
+End date (YYYY-MM-DD): 2025-12-31
+
+Found 47 videos in date range
+
+...filters applied...
+
+Summary:
+  Total videos: 47
+  Total size: 2.3 GB
+
+Preview and select videos individually? [y/N]: y
+
+Interactive Video Selection
+Watch each video and decide to keep or skip
+
+────────────────────────────────────────────────────────
+Video 1 of 47                    Kept: 0 | Skipped: 0
+────────────────────────────────────────────────────────
+Date:       2025-12-01 09:15
+Duration:   0:32
+People:     Casey
+Filename:   IMG_1234.MOV
+Dimensions: 1920x1080
+Size:       45.2 MB
+────────────────────────────────────────────────────────
+→/Enter: Keep   ←/Backspace: Skip   R: Rotate   U: Undo   Q: Quit
+
+[mpv window opens with video playing]
+
+✓ KEPT                           <- You pressed →
+
+────────────────────────────────────────────────────────
+Video 2 of 47                    Kept: 1 | Skipped: 0
+...
+
+════════════════════════════════════════════════════════
+Selection Complete
+════════════════════════════════════════════════════════
+  Videos reviewed: 47
+  Kept:            23 (49%)
+  Skipped:         24 (51%)
+════════════════════════════════════════════════════════
+
+Updated Selection:
+  Total videos: 23
+  Total size: 1.1 GB
+
+Proceed to copy videos? [Y/n]: y
+```
+
+**Keyboard controls during preview:**
+| Key | Action |
+|-----|--------|
+| `→` or `Enter` | Keep video |
+| `←` or `Backspace` | Skip video |
+| `R` | Rotate video 90° (saved for final compilation) |
+| `Space` | Pause/Resume playback (in mpv window) |
+| `U` | Undo last decision |
+| `Q` | Quit preview (asks about remaining) |
+
+### Example 5: Recompile with Different Quality
 
 Already created a project but want better quality? Recompile without re-exporting:
 
 ```
-$ python main.py --recompile projects/2025.12.01.to.2025.12.31.All/playlist.json
+$ uv run montage --recompile projects/2025.12.01.to.2025.12.31.All/playlist.json
 
 Recompiling: 2025.12.01.to.2025.12.31.All
 
 Encoding quality:
-    Auto (GPU if available)
-  > High (best quality, slower)    <-- Choose higher quality
-    Balanced (good quality)
-    Fast (preview quality)
+  > GPU - High (fast, good quality)    <-- Choose higher quality
+    GPU - Balanced (fast, smaller files)
+    GPU - Fast (fastest, preview quality)
+    ──────────────
+    CPU - High (slow, best quality)
+    CPU - Balanced (moderate speed)
+    CPU - Fast (faster, lower quality)
 
 Encoding... ━━━━━━━━━━━━━━━━━━━━ 100%
 
@@ -186,7 +264,7 @@ Output size: 312 MB
 
 Shorthand:
 ```bash
-python main.py -r projects/2025.12.01.to.2025.12.31.All/playlist.json
+uv run montage -r projects/2025.12.01.to.2025.12.31.All/playlist.json
 ```
 
 ---
@@ -208,12 +286,25 @@ python main.py -r projects/2025.12.01.to.2025.12.31.All/playlist.json
 
 ## Quality Settings
 
+Montage offers both GPU and CPU encoding options:
+
+### GPU Encoding (VideoToolbox)
+
 | Setting   | Description                          | Use Case                    |
 |-----------|--------------------------------------|-----------------------------|
-| **Auto**  | Uses GPU if available, else balanced | Default, recommended        |
-| **High**  | Best quality, slower encoding        | Final exports, archival     |
-| **Balanced** | Good quality, reasonable speed    | Everyday use                |
-| **Fast**  | Quick encode, lower quality          | Previews, drafts            |
+| **GPU - High** | Best quality, fast encoding     | Final exports, archival     |
+| **GPU - Balanced** | Good quality, smaller files | Everyday use (default)      |
+| **GPU - Fast** | Quick encode, preview quality  | Previews, drafts            |
+
+### CPU Encoding (libx265)
+
+| Setting   | Description                          | Use Case                    |
+|-----------|--------------------------------------|-----------------------------|
+| **CPU - High** | Best quality, slow encoding     | Maximum quality, no GPU     |
+| **CPU - Balanced** | Good quality, moderate speed | When GPU unavailable        |
+| **CPU - Fast** | Faster encode, lower quality   | Quick drafts, no GPU        |
+
+GPU options appear first when hardware encoding is available. If no GPU encoder is detected, GPU options are disabled and CPU options are shown as the default.
 
 ### Hardware Acceleration
 
@@ -249,6 +340,7 @@ Each project saves a `playlist.json` containing:
 - List of video UUIDs and file paths
 - Original filter settings (dates, people, duration)
 - Video metadata (duration, dimensions, people detected)
+- Rotation settings for each video (if adjusted during preview)
 
 This allows you to recompile with different quality settings without re-querying Photos.
 
@@ -259,12 +351,15 @@ This allows you to recompile with different quality settings without re-querying
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | macOS       | 10.15+  | Required for Photos integration |
-| Python      | 3.11    | Specified in `.python-version` |
+| uv          | 0.4+    | Install via `brew install uv` |
 | ffmpeg      | 4.3+    | Install via `brew install ffmpeg` |
+| mpv         | 0.35+   | Install via `brew install mpv` (optional) |
+
+Python 3.11 is automatically installed by uv when you run `uv run montage`.
 
 ### Python Dependencies
 
-Installed automatically from `requirements.txt`:
+Managed automatically via `pyproject.toml` and `uv.lock`:
 - `osxphotos` — Photos library access
 - `questionary` — Interactive CLI prompts
 - `rich` — Beautiful terminal output
@@ -303,6 +398,22 @@ Install ffmpeg:
 ```bash
 brew install ffmpeg
 ```
+
+### Video preview not working / "mpv not available"
+
+The interactive video preview requires mpv. Install it:
+```bash
+brew install mpv
+```
+
+If mpv is not installed, the preview feature is skipped and all filtered videos are included automatically.
+
+### Video appears rotated/sideways
+
+Some iPhone videos have rotation metadata that may display incorrectly. During interactive preview:
+1. Press `R` to rotate the video 90°
+2. Keep pressing `R` until it looks correct (cycles through 0°, 90°, 180°, 270°)
+3. The rotation is saved and applied during final compilation
 
 ---
 

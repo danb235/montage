@@ -5,12 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "montage"
 version = "0.1.0"
+description = "Create beautiful video compilations from your Apple Photos library"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "osxphotos>=0.74.0",
     "questionary>=2.0.0",
     "rich>=13.0.0",
 ]
+
+[project.scripts]
+montage = "main:main"
 
 [tool.setuptools]
 py-modules = ["main"]

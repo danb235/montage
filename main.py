@@ -13,12 +13,18 @@ Usage:
 
 import argparse
 import json
+import os
 import re
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Literal
 
 import osxphotos
 import questionary
@@ -48,6 +54,71 @@ ENCODER_NAMES = {
     "h264_videotoolbox": "VideoToolbox H.264 (GPU)",
     "libx265": "x265 (CPU)",
 }
+
+# Type aliases for encoding options
+EncoderType = Literal["gpu", "cpu"]
+QualityTier = Literal["high", "balanced", "fast"]
+
+
+@dataclass
+class EncodingSelection:
+    """Result of user's encoding quality selection."""
+
+    encoder_type: EncoderType  # "gpu" or "cpu"
+    quality_tier: QualityTier  # "high", "balanced", "fast"
+    encoder_name: str  # e.g., "hevc_videotoolbox" or "libx265"
+    encoder_settings: dict  # From _get_encoder_settings()
+
+
+# Type alias for video selection decisions
+DecisionType = Literal["keep", "skip", "pending"]
+
+
+@dataclass
+class VideoDecision:
+    """Tracks the user's decision for a single video."""
+
+    video: Any  # osxphotos.PhotoInfo
+    decision: DecisionType = "pending"
+    rotation: int = 0  # Degrees: 0, 90, 180, 270
+
+
+@dataclass
+class SelectionState:
+    """Manages the state of the interactive selection session."""
+
+    decisions: list[VideoDecision]
+    current_index: int = 0
+    should_quit: bool = False
+
+    @property
+    def current_video(self) -> VideoDecision:
+        """Get the current video being reviewed."""
+        return self.decisions[self.current_index]
+
+    @property
+    def total_count(self) -> int:
+        """Total number of videos to review."""
+        return len(self.decisions)
+
+    @property
+    def kept_count(self) -> int:
+        """Number of videos marked as keep."""
+        return sum(1 for d in self.decisions if d.decision == "keep")
+
+    @property
+    def skipped_count(self) -> int:
+        """Number of videos marked as skip."""
+        return sum(1 for d in self.decisions if d.decision == "skip")
+
+    def has_next(self) -> bool:
+        """Check if there's a next video to review."""
+        return self.current_index < len(self.decisions) - 1
+
+    def has_previous(self) -> bool:
+        """Check if there's a previous video to go back to."""
+        return self.current_index > 0
+
 
 # Encoder cache to avoid repeated tests
 _encoder_cache: dict[str, tuple] = {}
@@ -147,6 +218,19 @@ def detect_best_encoder(codec: str = "hevc") -> tuple[str, dict, list[str]]:
     result = ("libx265", _get_encoder_settings("libx265"), tested)
     _encoder_cache[cache_key] = result
     return result
+
+
+def _test_gpu_availability() -> tuple[bool, str | None, dict | None]:
+    """
+    Test GPU encoder availability without falling back to CPU.
+
+    Returns:
+        (is_available, encoder_name, encoder_settings) or (False, None, None)
+    """
+    for encoder in ["hevc_videotoolbox", "h264_videotoolbox"]:
+        if _test_encoder(encoder):
+            return (True, encoder, _get_encoder_settings(encoder))
+    return (False, None, None)
 
 
 def format_size(size_bytes: int | None) -> str:
@@ -311,23 +395,94 @@ def filter_by_people(videos: list, selected_people: list[str] | None) -> list:
     return filtered
 
 
-def prompt_quality_selection() -> str:
-    """Prompt user for encoding quality preset."""
-    quality = questionary.select(
+def prompt_quality_selection() -> EncodingSelection:
+    """Prompt user for encoding quality preset with GPU/CPU options."""
+    # Detect GPU availability first (with spinner)
+    with console.status("[dim]Detecting GPU encoder...[/dim]"):
+        gpu_available, gpu_encoder, gpu_settings = _test_gpu_availability()
+
+    # Build choices based on GPU availability
+    choices: list = []
+
+    if gpu_available:
+        # GPU options when available
+        choices.extend(
+            [
+                questionary.Choice(
+                    "GPU - High (fast, good quality)",
+                    value=("gpu", "high"),
+                ),
+                questionary.Choice(
+                    "GPU - Balanced (fast, smaller files)",
+                    value=("gpu", "balanced"),
+                ),
+                questionary.Choice(
+                    "GPU - Fast (fastest, preview quality)",
+                    value=("gpu", "fast"),
+                ),
+            ]
+        )
+    else:
+        # Disabled GPU option when unavailable
+        choices.append(
+            questionary.Choice(
+                "GPU - Not available (no hardware encoder)",
+                value=None,
+                disabled="no VideoToolbox encoder detected",
+            )
+        )
+
+    # Separator between GPU and CPU options
+    choices.append(questionary.Separator())
+
+    # CPU options (always available)
+    choices.extend(
+        [
+            questionary.Choice(
+                "CPU - High (slow, best quality)",
+                value=("cpu", "high"),
+            ),
+            questionary.Choice(
+                "CPU - Balanced (moderate speed)",
+                value=("cpu", "balanced"),
+            ),
+            questionary.Choice(
+                "CPU - Fast (faster, lower quality)",
+                value=("cpu", "fast"),
+            ),
+        ]
+    )
+
+    # Set default: GPU Balanced if available, else CPU Balanced
+    default = ("gpu", "balanced") if gpu_available else ("cpu", "balanced")
+
+    selection = questionary.select(
         "Encoding quality:",
-        choices=[
-            "Auto (GPU if available)",
-            "High (best quality, slower)",
-            "Balanced (good quality)",
-            "Fast (preview quality)",
-        ],
-        default="Auto (GPU if available)",
+        choices=choices,
+        default=default,  # type: ignore[arg-type]
     ).ask()
 
-    if quality is None:
+    if selection is None:
         sys.exit(0)
 
-    return quality
+    encoder_type, quality_tier = selection
+
+    # Determine encoder name and settings based on selection
+    if encoder_type == "gpu":
+        assert gpu_encoder is not None  # Guaranteed by gpu_available check
+        assert gpu_settings is not None
+        encoder_name = gpu_encoder
+        encoder_settings = gpu_settings
+    else:
+        encoder_name = "libx265"
+        encoder_settings = _get_encoder_settings("libx265")
+
+    return EncodingSelection(
+        encoder_type=encoder_type,
+        quality_tier=quality_tier,
+        encoder_name=encoder_name,
+        encoder_settings=encoder_settings,
+    )
 
 
 def prompt_duration_filter() -> tuple[float | None, float | None]:
@@ -452,6 +607,319 @@ def display_video_summary(videos: list) -> None:
         )
 
 
+# =============================================================================
+# Interactive Video Selection (mpv subprocess)
+# =============================================================================
+
+
+def _check_mpv_available() -> bool:
+    """
+    Check if mpv binary is available for video playback.
+
+    Returns:
+        True if mpv can be used, False otherwise.
+    """
+    if shutil.which("mpv") is None:
+        console.print("[yellow]mpv media player not installed[/yellow]")
+        console.print("[dim]Install with: brew install mpv[/dim]")
+        return False
+    return True
+
+
+# Path for mpv IPC socket
+MPV_SOCKET_PATH = "/tmp/montage-mpv-socket"
+
+
+def _send_mpv_command(command: list) -> bool:
+    """
+    Send a command to mpv via IPC socket.
+
+    Args:
+        command: List of command arguments (e.g., ["loadfile", "/path/to/video"])
+
+    Returns:
+        True if command was sent successfully, False otherwise.
+    """
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(MPV_SOCKET_PATH)
+        sock.send((json.dumps({"command": command}) + "\n").encode())
+        sock.close()
+        return True
+    except (ConnectionRefusedError, FileNotFoundError):
+        return False
+
+
+def _display_video_metadata(
+    video: Any, index: int, total: int, state: SelectionState
+) -> None:
+    """
+    Display video metadata in the terminal alongside playback.
+
+    Args:
+        video: osxphotos.PhotoInfo object
+        index: Current video index (0-based)
+        total: Total number of videos
+        state: Current selection state for kept/skipped counts
+    """
+    # Clear previous output and show new metadata
+    console.print("\n" + "─" * 60)
+    console.print(
+        f"[bold cyan]Video {index + 1} of {total}[/bold cyan]"
+        f"                    [green]Kept: {state.kept_count}[/green] | "
+        f"[red]Skipped: {state.skipped_count}[/red]"
+    )
+    console.print("─" * 60)
+
+    # Video metadata
+    duration = video.exif_info.duration if video.exif_info else 0
+    size = video.original_filesize or 0
+
+    people = ", ".join(p for p in video.persons if not p.startswith("_UNKNOWN"))
+    if not people:
+        people = "-"
+
+    location = ""
+    if video.place:
+        location = video.place.name or "-"
+    else:
+        location = "-"
+
+    console.print(f"[dim]Date:[/dim]       {video.date.strftime('%Y-%m-%d %H:%M')}")
+    console.print(f"[dim]Duration:[/dim]   {format_duration(duration)}")
+    console.print(f"[dim]People:[/dim]     {people}")
+    console.print(f"[dim]Filename:[/dim]   {video.original_filename}")
+    console.print(f"[dim]Dimensions:[/dim] {video.width}x{video.height}")
+    console.print(f"[dim]Size:[/dim]       {format_size(size)}")
+    console.print(f"[dim]Location:[/dim]   {location}")
+
+    # Show rotation if non-zero
+    if state.current_video.rotation != 0:
+        console.print(f"[cyan]Rotation:[/cyan]   {state.current_video.rotation}°")
+
+    console.print("─" * 60)
+    console.print(
+        "[bold]→/Enter:[/bold] Keep   "
+        "[bold]←/Backspace:[/bold] Skip   "
+        "[bold]R:[/bold] Rotate   "
+        "[bold]U:[/bold] Undo   "
+        "[bold]Q:[/bold] Quit"
+    )
+
+
+def _display_selection_summary(state: SelectionState) -> None:
+    """
+    Display final summary of selection session.
+
+    Args:
+        state: Final selection state after user completes/quits
+    """
+    console.print("\n" + "═" * 60)
+    console.print("[bold]Selection Complete[/bold]")
+    console.print("═" * 60)
+
+    reviewed = state.kept_count + state.skipped_count
+    pending = state.total_count - reviewed
+
+    console.print(f"  Videos reviewed: {reviewed}")
+    if reviewed > 0:
+        kept_pct = (state.kept_count / reviewed) * 100
+        console.print(
+            f"  [green]Kept:[/green]            {state.kept_count} ({kept_pct:.0f}%)"
+        )
+        console.print(
+            f"  [red]Skipped:[/red]         {state.skipped_count} ({100 - kept_pct:.0f}%)"
+        )
+    if pending > 0:
+        console.print(f"  [yellow]Unreviewed:[/yellow]      {pending}")
+
+    console.print("═" * 60 + "\n")
+
+
+def interactive_video_selection(videos: list) -> tuple[list, dict[str, int]]:
+    """
+    Present videos for interactive keep/skip selection using mpv playback.
+
+    Args:
+        videos: List of osxphotos.PhotoInfo objects to review
+
+    Returns:
+        Tuple of (kept_videos, rotation_map) where rotation_map maps
+        video UUIDs to rotation degrees (0, 90, 180, 270).
+    """
+    # Check mpv availability
+    if not _check_mpv_available():
+        console.print(
+            "[dim]Falling back to including all videos without preview.[/dim]"
+        )
+        return videos, {}
+
+    # Filter out iCloud-only videos (path is None when ismissing=True)
+    playable_videos = []
+    icloud_only = []
+
+    for v in videos:
+        if v.ismissing or v.path is None:
+            icloud_only.append(v)
+        else:
+            playable_videos.append(v)
+
+    if icloud_only:
+        console.print(
+            f"\n[yellow]Note: {len(icloud_only)} videos are in iCloud only "
+            f"and cannot be previewed.[/yellow]"
+        )
+        console.print("[dim]These will be included automatically.[/dim]")
+
+    if not playable_videos:
+        console.print("[yellow]No local videos available for preview.[/yellow]")
+        return videos, {}
+
+    # Sort by date for chronological review
+    playable_videos = sorted(playable_videos, key=lambda x: x.date)
+
+    # Initialize state
+    state = SelectionState(decisions=[VideoDecision(video=v) for v in playable_videos])
+
+    console.print("\n[bold cyan]Interactive Video Selection[/bold cyan]")
+    console.print("[dim]Watch each video and decide to keep or skip[/dim]")
+    console.print(
+        "[dim]Position the video window where you like - it will stay there[/dim]\n"
+    )
+
+    mpv_process = None
+
+    # Clean up any stale socket file
+    if os.path.exists(MPV_SOCKET_PATH):
+        os.unlink(MPV_SOCKET_PATH)
+
+    try:
+        # Launch mpv once with the first video
+        first_video_path = str(state.decisions[0].video.path)
+        mpv_process = subprocess.Popen(
+            [
+                "mpv",
+                f"--input-ipc-server={MPV_SOCKET_PATH}",
+                "--keep-open=yes",
+                "--force-window=immediate",
+                "--loop=inf",
+                "--focus-on=never",  # macOS: don't steal focus
+                "--title=Montage - Video Selection",
+                first_video_path,
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # Brief wait for mpv to create the socket
+        time.sleep(0.3)
+
+        while not state.should_quit and state.current_index < state.total_count:
+            current = state.current_video
+
+            # Display metadata in terminal
+            _display_video_metadata(
+                current.video, state.current_index, state.total_count, state
+            )
+
+            # Get user choice via questionary
+            choice = questionary.select(
+                "Decision:",
+                choices=[
+                    questionary.Choice("Keep", shortcut_key="1"),
+                    questionary.Choice("Skip", shortcut_key="2"),
+                    questionary.Choice("Rotate 90°", shortcut_key="r"),
+                    questionary.Choice("Undo", shortcut_key="3"),
+                    questionary.Choice("Quit", shortcut_key="4"),
+                ],
+                use_shortcuts=True,
+                use_jk_keys=False,
+            ).ask()
+
+            # Process choice
+            if choice == "Rotate 90°":
+                current.rotation = (current.rotation + 90) % 360
+                _send_mpv_command(
+                    ["set_property", "video-rotate", str(current.rotation)]
+                )
+                console.print(f"[cyan]↻ Rotated to {current.rotation}°[/cyan]")
+                continue  # Stay on same video
+            elif choice == "Keep":
+                current.decision = "keep"
+                console.print("[green]✓ KEPT[/green]")
+                if state.has_next():
+                    state.current_index += 1
+                    # Load next video via IPC
+                    next_path = str(state.decisions[state.current_index].video.path)
+                    _send_mpv_command(["loadfile", next_path])
+                else:
+                    break
+            elif choice == "Skip":
+                current.decision = "skip"
+                console.print("[red]✗ SKIPPED[/red]")
+                if state.has_next():
+                    state.current_index += 1
+                    # Load next video via IPC
+                    next_path = str(state.decisions[state.current_index].video.path)
+                    _send_mpv_command(["loadfile", next_path])
+                else:
+                    break
+            elif choice == "Undo":
+                if state.has_previous():
+                    state.decisions[state.current_index].decision = "pending"
+                    state.current_index -= 1
+                    state.current_video.decision = "pending"
+                    console.print("[yellow]↩ UNDO[/yellow]")
+                    # Load previous video via IPC
+                    prev_path = str(state.decisions[state.current_index].video.path)
+                    _send_mpv_command(["loadfile", prev_path])
+                else:
+                    console.print("[dim]Nothing to undo[/dim]")
+            elif choice == "Quit" or choice is None:
+                state.should_quit = True
+
+    except KeyboardInterrupt:
+        state.should_quit = True
+        console.print("\n[yellow]Selection interrupted[/yellow]")
+    finally:
+        if mpv_process:
+            mpv_process.terminate()
+            mpv_process.wait()
+        # Clean up socket file
+        if os.path.exists(MPV_SOCKET_PATH):
+            os.unlink(MPV_SOCKET_PATH)
+
+    # Display summary
+    _display_selection_summary(state)
+
+    # Collect kept videos and build rotation map
+    kept = [d.video for d in state.decisions if d.decision == "keep"]
+    rotation_map = {
+        d.video.uuid: d.rotation
+        for d in state.decisions
+        if d.decision == "keep" and d.rotation != 0
+    }
+
+    # Add back iCloud-only videos (they were auto-included)
+    kept.extend(icloud_only)
+
+    # Handle quit scenarios - ask about pending videos
+    if state.should_quit:
+        pending_count = sum(1 for d in state.decisions if d.decision == "pending")
+        if pending_count > 0:
+            include_pending = questionary.confirm(
+                f"Include {pending_count} unreviewed videos?", default=True
+            ).ask()
+
+            if include_pending:
+                kept.extend(
+                    [d.video for d in state.decisions if d.decision == "pending"]
+                )
+
+    return kept, rotation_map
+
+
 def export_videos(videos: list) -> dict[str, Path]:
     """Export videos to local cache, skip if already exists."""
     VIDEOS_DIR.mkdir(exist_ok=True)
@@ -511,13 +979,18 @@ def export_videos(videos: list) -> dict[str, Path]:
 
 
 def create_playlist(
-    videos: list, project_name: str, filters: dict, exported: dict[str, Path]
+    videos: list,
+    project_name: str,
+    filters: dict,
+    exported: dict[str, Path],
+    rotation_map: dict[str, int] | None = None,
 ) -> Path:
     """Create playlist JSON for the project."""
     projects_dir = PROJECTS_DIR / project_name
     projects_dir.mkdir(parents=True, exist_ok=True)
 
     sorted_videos = sorted(videos, key=lambda x: x.date)
+    rotation_map = rotation_map or {}
 
     videos_list: list[dict] = []
     playlist = {
@@ -545,6 +1018,7 @@ def create_playlist(
                 "width": v.width,
                 "height": v.height,
                 "path": str(exported[v.uuid].absolute()),
+                "rotation": rotation_map.get(v.uuid, 0),
             }
         )
 
@@ -555,10 +1029,24 @@ def create_playlist(
     return playlist_path
 
 
-def build_portrait_filter(input_idx: int) -> str:
-    """Build ffmpeg filter for portrait video with blurred pillarbox."""
+def build_portrait_filter(input_idx: int, rotation: int = 0) -> str:
+    """Build ffmpeg filter for portrait video with blurred pillarbox.
+
+    Args:
+        input_idx: Index of the input video stream
+        rotation: Rotation in degrees (0, 90, 180, 270)
+    """
+    # Build rotation filter if needed
+    rotate_part = ""
+    if rotation == 90:
+        rotate_part = "transpose=1,"
+    elif rotation == 180:
+        rotate_part = "transpose=1,transpose=1,"
+    elif rotation == 270:
+        rotate_part = "transpose=2,"
+
     return (
-        f"[{input_idx}:v]split[{input_idx}orig][{input_idx}copy];"
+        f"[{input_idx}:v]{rotate_part}split[{input_idx}orig][{input_idx}copy];"
         f"[{input_idx}copy]scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=increase,"
         f"crop={TARGET_WIDTH}:{TARGET_HEIGHT},gblur=sigma=50[{input_idx}blur];"
         f"[{input_idx}blur][{input_idx}orig]overlay=(W-w)/2:(H-h)/2,"
@@ -566,28 +1054,44 @@ def build_portrait_filter(input_idx: int) -> str:
     )
 
 
-def build_landscape_filter(input_idx: int) -> str:
-    """Build ffmpeg filter for landscape video (scale and pad)."""
+def build_landscape_filter(input_idx: int, rotation: int = 0) -> str:
+    """Build ffmpeg filter for landscape video (scale and pad).
+
+    Args:
+        input_idx: Index of the input video stream
+        rotation: Rotation in degrees (0, 90, 180, 270)
+    """
+    # Build rotation filter if needed
+    rotate_part = ""
+    if rotation == 90:
+        rotate_part = "transpose=1,"
+    elif rotation == 180:
+        rotate_part = "transpose=1,transpose=1,"
+    elif rotation == 270:
+        rotate_part = "transpose=2,"
+
     return (
-        f"[{input_idx}:v]scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,"
+        f"[{input_idx}:v]{rotate_part}scale={TARGET_WIDTH}:{TARGET_HEIGHT}:force_original_aspect_ratio=decrease,"
         f"pad={TARGET_WIDTH}:{TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2:black,"
         f"setsar=1,fps={TARGET_FPS},settb=AVTB[v{input_idx}]"
     )
 
 
 def compile_movie(
-    playlist_path: Path, quality: str = "Auto (GPU if available)"
+    playlist_path: Path, encoding: EncodingSelection | None = None
 ) -> Path | None:
     """Compile videos into a single movie using ffmpeg."""
     console.print("\n[bold]Step 7: Compiling Movie[/bold]\n")
 
-    # Detect encoder and determine settings
-    if quality == "Auto (GPU if available)":
+    # Determine encoder settings
+    if encoding is None:
+        # Auto-detection mode (for backward compatibility or direct calls)
         console.print("[dim]Detecting available encoders...[/dim]")
-        encoder, enc_settings, tested = detect_best_encoder()
+        detected_encoder, enc_settings, tested = detect_best_encoder()
         quality_tier = "balanced"
+        encoder = detected_encoder
 
-        encoder_name = ENCODER_NAMES.get(encoder, encoder)
+        encoder_display_name = ENCODER_NAMES.get(encoder, encoder)
 
         if encoder == "libx265":
             # CPU fallback - explain why
@@ -601,24 +1105,24 @@ def compile_movie(
                 "[dim]or FFmpeg compiled without hardware encoder support.[/dim]"
             )
             console.print(
-                f"[cyan]Using: {encoder_name} (slower but works everywhere)[/cyan]"
+                f"[cyan]Using: {encoder_display_name} (slower but works everywhere)[/cyan]"
             )
         else:
             # GPU encoder found
             console.print("[green]GPU encoder detected![/green]")
-            console.print(f"[cyan]Using: {encoder_name}[/cyan]")
+            console.print(f"[cyan]Using: {encoder_display_name}[/cyan]")
     else:
-        # Manual quality selection - use CPU encoder
-        encoder = "libx265"
-        enc_settings = _get_encoder_settings("libx265")
-        quality_tier = {
-            "High (best quality, slower)": "high",
-            "Balanced (good quality)": "balanced",
-            "Fast (preview quality)": "fast",
-        }.get(quality, "balanced")
-        console.print(
-            f"[cyan]Using: {ENCODER_NAMES.get(encoder, encoder)} ({quality_tier})[/cyan]"
-        )
+        # Use the provided encoding selection
+        encoder = encoding.encoder_name
+        enc_settings = encoding.encoder_settings
+        quality_tier = encoding.quality_tier
+
+        encoder_display_name = ENCODER_NAMES.get(encoder, encoder)
+        encoder_type_label = "GPU" if encoding.encoder_type == "gpu" else "CPU"
+
+        if encoding.encoder_type == "gpu":
+            console.print(f"[green]{encoder_type_label} encoder selected[/green]")
+        console.print(f"[cyan]Using: {encoder_display_name} ({quality_tier})[/cyan]")
 
     console.print()  # Blank line before progress info
 
@@ -653,11 +1157,12 @@ def compile_movie(
     # Add input files and normalize filters
     for i, v in enumerate(videos):
         inputs.extend(["-i", v["path"]])
+        rotation = v.get("rotation", 0)
 
         if v["is_portrait"]:
-            filter_parts.append(build_portrait_filter(i))
+            filter_parts.append(build_portrait_filter(i, rotation))
         else:
-            filter_parts.append(build_landscape_filter(i))
+            filter_parts.append(build_landscape_filter(i, rotation))
 
         # Audio normalization
         filter_parts.append(
@@ -846,8 +1351,8 @@ def main() -> None:
             console.print(f"[dim]Removed existing {old_output.name}[/dim]")
 
         # Prompt for quality selection
-        quality = prompt_quality_selection()
-        compile_movie(playlist_path, quality)
+        encoding = prompt_quality_selection()
+        compile_movie(playlist_path, encoding)
         return
 
     console.print("\n[bold cyan]Video Compiler[/bold cyan]")
@@ -882,6 +1387,27 @@ def main() -> None:
 
     # Step 5: Display summary
     display_video_summary(videos)
+
+    # Step 5.5: Optional interactive video selection
+    use_interactive = questionary.confirm(
+        "\nPreview and select videos individually?", default=False
+    ).ask()
+
+    if use_interactive is None:  # User cancelled (Ctrl+C)
+        console.print("[dim]Cancelled[/dim]")
+        return
+
+    rotation_map: dict[str, int] = {}
+    if use_interactive:
+        videos, rotation_map = interactive_video_selection(videos)
+
+        if not videos:
+            console.print("[yellow]No videos selected. Aborting.[/yellow]")
+            return
+
+        # Show updated selection summary
+        console.print("\n[bold]Updated Selection:[/bold]")
+        display_video_summary(videos)
 
     # Confirm to proceed
     if not questionary.confirm("\nProceed to copy videos?", default=True).ask():
@@ -922,13 +1448,15 @@ def main() -> None:
         "max_duration": max_dur,
     }
 
-    playlist_path = create_playlist(videos, project_name, filters, exported)
+    playlist_path = create_playlist(
+        videos, project_name, filters, exported, rotation_map
+    )
 
     # Step 8: Compile movie
     if questionary.confirm("\nGenerate final movie now?", default=True).ask():
         # Prompt for quality selection
-        quality = prompt_quality_selection()
-        output_path = compile_movie(playlist_path, quality)
+        encoding = prompt_quality_selection()
+        output_path = compile_movie(playlist_path, encoding)
 
         if output_path:
             console.print("\n[bold green]Done![/bold green]")

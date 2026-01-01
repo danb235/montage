@@ -9,6 +9,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import (
+    EncodingSelection,
+    _get_encoder_settings,
     prompt_date_range,
     prompt_duration_filter,
     prompt_people_selection,
@@ -138,50 +140,182 @@ class TestPromptPeopleSelection:
 class TestPromptQualitySelection:
     """Tests for prompt_quality_selection() function."""
 
-    def test_auto_quality(self, mocker):
-        """Test selecting Auto quality."""
+    def test_gpu_balanced_when_available(self, mocker, mock_console):
+        """Test selecting GPU Balanced quality when GPU is available."""
+        gpu_settings = _get_encoder_settings("hevc_videotoolbox")
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(True, "hevc_videotoolbox", gpu_settings),
+        )
         mock_select = mocker.patch("main.questionary.select")
-        mock_select.return_value.ask.return_value = "Auto (GPU if available)"
+        mock_select.return_value.ask.return_value = ("gpu", "balanced")
 
         result = prompt_quality_selection()
 
-        assert result == "Auto (GPU if available)"
+        assert isinstance(result, EncodingSelection)
+        assert result.encoder_type == "gpu"
+        assert result.quality_tier == "balanced"
+        assert result.encoder_name == "hevc_videotoolbox"
 
-    def test_high_quality(self, mocker):
-        """Test selecting High quality."""
+    def test_gpu_high_quality(self, mocker, mock_console):
+        """Test selecting GPU High quality."""
+        gpu_settings = _get_encoder_settings("hevc_videotoolbox")
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(True, "hevc_videotoolbox", gpu_settings),
+        )
         mock_select = mocker.patch("main.questionary.select")
-        mock_select.return_value.ask.return_value = "High (best quality, slower)"
+        mock_select.return_value.ask.return_value = ("gpu", "high")
 
         result = prompt_quality_selection()
 
-        assert result == "High (best quality, slower)"
+        assert result.encoder_type == "gpu"
+        assert result.quality_tier == "high"
 
-    def test_balanced_quality(self, mocker):
-        """Test selecting Balanced quality."""
+    def test_gpu_fast_quality(self, mocker, mock_console):
+        """Test selecting GPU Fast quality."""
+        gpu_settings = _get_encoder_settings("hevc_videotoolbox")
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(True, "hevc_videotoolbox", gpu_settings),
+        )
         mock_select = mocker.patch("main.questionary.select")
-        mock_select.return_value.ask.return_value = "Balanced (good quality)"
+        mock_select.return_value.ask.return_value = ("gpu", "fast")
 
         result = prompt_quality_selection()
 
-        assert result == "Balanced (good quality)"
+        assert result.encoder_type == "gpu"
+        assert result.quality_tier == "fast"
 
-    def test_fast_quality(self, mocker):
-        """Test selecting Fast quality."""
+    def test_cpu_balanced_when_gpu_unavailable(self, mocker, mock_console):
+        """Test selecting CPU Balanced when GPU is not available."""
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
         mock_select = mocker.patch("main.questionary.select")
-        mock_select.return_value.ask.return_value = "Fast (preview quality)"
+        mock_select.return_value.ask.return_value = ("cpu", "balanced")
 
         result = prompt_quality_selection()
 
-        assert result == "Fast (preview quality)"
+        assert isinstance(result, EncodingSelection)
+        assert result.encoder_type == "cpu"
+        assert result.quality_tier == "balanced"
+        assert result.encoder_name == "libx265"
 
-    def test_user_cancels(self, mocker):
+    def test_cpu_high_quality(self, mocker, mock_console):
+        """Test selecting CPU High quality."""
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("cpu", "high")
+
+        result = prompt_quality_selection()
+
+        assert result.encoder_type == "cpu"
+        assert result.quality_tier == "high"
+
+    def test_cpu_fast_quality(self, mocker, mock_console):
+        """Test selecting CPU Fast quality."""
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("cpu", "fast")
+
+        result = prompt_quality_selection()
+
+        assert result.encoder_type == "cpu"
+        assert result.quality_tier == "fast"
+
+    def test_default_is_gpu_balanced_when_available(self, mocker, mock_console):
+        """Test that default selection is GPU Balanced when GPU is available."""
+        gpu_settings = _get_encoder_settings("hevc_videotoolbox")
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(True, "hevc_videotoolbox", gpu_settings),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("gpu", "balanced")
+
+        prompt_quality_selection()
+
+        # Check that default was set to GPU balanced
+        call_kwargs = mock_select.call_args
+        assert call_kwargs.kwargs["default"] == ("gpu", "balanced")
+
+    def test_default_is_cpu_balanced_when_gpu_unavailable(self, mocker, mock_console):
+        """Test that default selection is CPU Balanced when GPU is unavailable."""
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("cpu", "balanced")
+
+        prompt_quality_selection()
+
+        # Check that default was set to CPU balanced
+        call_kwargs = mock_select.call_args
+        assert call_kwargs.kwargs["default"] == ("cpu", "balanced")
+
+    def test_gpu_unavailable_shows_disabled_option(self, mocker, mock_console):
+        """Test that GPU option is disabled when unavailable."""
+        import questionary
+
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("cpu", "balanced")
+
+        prompt_quality_selection()
+
+        # Check that a disabled Choice (not Separator) was passed
+        call_kwargs = mock_select.call_args
+        choices = call_kwargs.kwargs["choices"]
+        disabled_choices = [
+            c
+            for c in choices
+            if isinstance(c, questionary.Choice)
+            and not isinstance(c, questionary.Separator)
+            and hasattr(c, "disabled")
+            and c.disabled
+        ]
+        assert len(disabled_choices) == 1
+        assert "no VideoToolbox" in disabled_choices[0].disabled
+
+    def test_user_cancels(self, mocker, mock_console):
         """Test user cancellation."""
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(False, None, None),
+        )
         mock_select = mocker.patch("main.questionary.select")
         mock_select.return_value.ask.return_value = None
 
         with pytest.raises(SystemExit) as exc_info:
             prompt_quality_selection()
         assert exc_info.value.code == 0
+
+    def test_h264_fallback_when_hevc_unavailable(self, mocker, mock_console):
+        """Test H.264 GPU encoder is used when HEVC is unavailable."""
+        h264_settings = _get_encoder_settings("h264_videotoolbox")
+        mocker.patch(
+            "main._test_gpu_availability",
+            return_value=(True, "h264_videotoolbox", h264_settings),
+        )
+        mock_select = mocker.patch("main.questionary.select")
+        mock_select.return_value.ask.return_value = ("gpu", "balanced")
+
+        result = prompt_quality_selection()
+
+        assert result.encoder_type == "gpu"
+        assert result.encoder_name == "h264_videotoolbox"
 
 
 class TestPromptDurationFilter:

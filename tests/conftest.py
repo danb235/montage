@@ -39,6 +39,7 @@ def create_mock_video(
     intrash: bool = False,
     ismissing: bool = False,
     place_name: str | None = None,
+    path: str | None = "/path/to/video.mov",
 ) -> MagicMock:
     """Factory for creating mock osxphotos video objects."""
     video = MagicMock()
@@ -53,6 +54,7 @@ def create_mock_video(
     video.ismissing = ismissing
     video.exif_info = MockExifInfo(duration=duration)
     video.place = MockPlace(name=place_name) if place_name else None
+    video.path = path  # Path to video file for playback
     return video
 
 
@@ -275,3 +277,74 @@ def sample_playlist_multiple_videos(tmp_path):
 def video_factory():
     """Provide the create_mock_video factory function as a fixture."""
     return create_mock_video
+
+
+# =============================================================================
+# Interactive Video Selection Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def mock_video_with_path():
+    """Video with a valid path for playback testing."""
+    return create_mock_video(
+        uuid="playable-001",
+        path="/path/to/playable_video.mov",
+        ismissing=False,
+    )
+
+
+@pytest.fixture
+def mock_video_icloud_only():
+    """Video that is in iCloud only (no local path)."""
+    return create_mock_video(
+        uuid="icloud-001",
+        path=None,
+        ismissing=True,
+    )
+
+
+@pytest.fixture
+def mock_videos_mixed():
+    """Mix of playable and iCloud-only videos for selection testing."""
+    return [
+        create_mock_video(
+            uuid="local-001",
+            date=datetime(2024, 6, 15, 10, 0),
+            path="/path/to/local1.mov",
+            ismissing=False,
+            persons=["Alice"],
+        ),
+        create_mock_video(
+            uuid="local-002",
+            date=datetime(2024, 6, 15, 14, 0),
+            path="/path/to/local2.mov",
+            ismissing=False,
+            persons=["Bob"],
+        ),
+        create_mock_video(
+            uuid="icloud-001",
+            date=datetime(2024, 6, 16, 9, 0),
+            path=None,
+            ismissing=True,
+            persons=["Charlie"],
+        ),
+    ]
+
+
+@pytest.fixture
+def mock_mpv_unavailable(mocker):
+    """Mock mpv as unavailable (shutil.which returns None)."""
+    mocker.patch("main._check_mpv_available", return_value=False)
+
+
+@pytest.fixture
+def mock_mpv_available(mocker):
+    """Mock mpv as available with subprocess."""
+    mocker.patch("main._check_mpv_available", return_value=True)
+    # Mock subprocess.Popen to return a mock process
+    mock_process = MagicMock()
+    mock_process.terminate = MagicMock()
+    mock_process.wait = MagicMock()
+    mocker.patch("subprocess.Popen", return_value=mock_process)
+    return mock_process

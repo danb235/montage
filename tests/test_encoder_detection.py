@@ -8,7 +8,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from main import ENCODER_NAMES, _encoder_cache, _test_encoder, detect_best_encoder
+from main import (
+    ENCODER_NAMES,
+    _encoder_cache,
+    _test_encoder,
+    _test_gpu_availability,
+    detect_best_encoder,
+)
 
 
 class TestTestEncoder:
@@ -230,3 +236,60 @@ class TestEncoderNames:
     def test_libx265_has_friendly_name(self):
         assert "libx265" in ENCODER_NAMES
         assert "CPU" in ENCODER_NAMES["libx265"]
+
+
+class TestTestGpuAvailability:
+    """Tests for _test_gpu_availability() function."""
+
+    def test_returns_true_when_hevc_available(self, mocker):
+        """When HEVC VideoToolbox works, return True with encoder info."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        available, encoder, settings = _test_gpu_availability()
+
+        assert available is True
+        assert encoder == "hevc_videotoolbox"
+        assert settings is not None
+        assert settings["quality_flag"] == "-q:v"
+
+    def test_returns_true_with_h264_when_hevc_fails(self, mocker):
+        """When HEVC fails but H.264 works, return True with H.264 encoder."""
+        mocker.patch("main._test_encoder", side_effect=[False, True])
+
+        available, encoder, settings = _test_gpu_availability()
+
+        assert available is True
+        assert encoder == "h264_videotoolbox"
+        assert settings is not None
+
+    def test_returns_false_when_no_gpu_available(self, mocker):
+        """When all GPU encoders fail, return False with None values."""
+        mocker.patch("main._test_encoder", return_value=False)
+
+        available, encoder, settings = _test_gpu_availability()
+
+        assert available is False
+        assert encoder is None
+        assert settings is None
+
+    def test_does_not_fallback_to_cpu(self, mocker):
+        """Verify that _test_gpu_availability never returns CPU encoder."""
+        mocker.patch("main._test_encoder", return_value=False)
+
+        available, encoder, _settings = _test_gpu_availability()
+
+        # Should never return libx265
+        assert encoder != "libx265"
+        assert available is False
+
+    def test_tests_encoders_in_priority_order(self, mocker):
+        """Verify HEVC is tested before H.264."""
+        mock_test = mocker.patch("main._test_encoder", return_value=False)
+
+        _test_gpu_availability()
+
+        # Check the order of calls
+        calls = mock_test.call_args_list
+        assert len(calls) == 2
+        assert calls[0][0][0] == "hevc_videotoolbox"
+        assert calls[1][0][0] == "h264_videotoolbox"

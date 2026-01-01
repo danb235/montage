@@ -1,3 +1,0 @@
-osxphotos>=0.74.0
-questionary>=2.0.0
-rich>=13.0.0

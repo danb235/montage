@@ -148,6 +148,33 @@ class TestBuildPortraitFilter:
         filter_str = build_portrait_filter(0)
         assert "settb=AVTB" in filter_str
 
+    def test_no_rotation_by_default(self):
+        """Filter should not include transpose when rotation is 0."""
+        filter_str = build_portrait_filter(0)
+        assert "transpose" not in filter_str
+
+    def test_rotation_90_degrees(self):
+        """Filter should include transpose=1 for 90 degree rotation."""
+        filter_str = build_portrait_filter(0, rotation=90)
+        assert "transpose=1" in filter_str
+
+    def test_rotation_180_degrees(self):
+        """Filter should include double transpose for 180 degree rotation."""
+        filter_str = build_portrait_filter(0, rotation=180)
+        assert "transpose=1,transpose=1" in filter_str
+
+    def test_rotation_270_degrees(self):
+        """Filter should include transpose=2 for 270 degree rotation."""
+        filter_str = build_portrait_filter(0, rotation=270)
+        assert "transpose=2" in filter_str
+
+    def test_rotation_applied_before_split(self):
+        """Rotation filter should be applied before split operation."""
+        filter_str = build_portrait_filter(0, rotation=90)
+        transpose_pos = filter_str.find("transpose=1")
+        split_pos = filter_str.find("split")
+        assert transpose_pos < split_pos
+
 
 class TestBuildLandscapeFilter:
     """Tests for build_landscape_filter() function."""
@@ -203,3 +230,30 @@ class TestBuildLandscapeFilter:
         """Verify timebase is set."""
         filter_str = build_landscape_filter(0)
         assert "settb=AVTB" in filter_str
+
+    def test_no_rotation_by_default(self):
+        """Filter should not include transpose when rotation is 0."""
+        filter_str = build_landscape_filter(0)
+        assert "transpose" not in filter_str
+
+    def test_rotation_90_degrees(self):
+        """Filter should include transpose=1 for 90 degree rotation."""
+        filter_str = build_landscape_filter(0, rotation=90)
+        assert "transpose=1" in filter_str
+
+    def test_rotation_180_degrees(self):
+        """Filter should include double transpose for 180 degree rotation."""
+        filter_str = build_landscape_filter(0, rotation=180)
+        assert "transpose=1,transpose=1" in filter_str
+
+    def test_rotation_270_degrees(self):
+        """Filter should include transpose=2 for 270 degree rotation."""
+        filter_str = build_landscape_filter(0, rotation=270)
+        assert "transpose=2" in filter_str
+
+    def test_rotation_applied_before_scale(self):
+        """Rotation filter should be applied before scale operation."""
+        filter_str = build_landscape_filter(0, rotation=90)
+        transpose_pos = filter_str.find("transpose=1")
+        scale_pos = filter_str.find("scale=")
+        assert transpose_pos < scale_pos

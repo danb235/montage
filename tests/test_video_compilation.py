@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from main import _encoder_cache, compile_movie
+from main import EncodingSelection, _encoder_cache, _get_encoder_settings, compile_movie
 
 
 class TestCompileMovie:
@@ -22,6 +22,46 @@ class TestCompileMovie:
         yield
         _encoder_cache.clear()
 
+    @pytest.fixture
+    def gpu_encoding_balanced(self):
+        """GPU encoding with balanced quality."""
+        return EncodingSelection(
+            encoder_type="gpu",
+            quality_tier="balanced",
+            encoder_name="hevc_videotoolbox",
+            encoder_settings=_get_encoder_settings("hevc_videotoolbox"),
+        )
+
+    @pytest.fixture
+    def cpu_encoding_high(self):
+        """CPU encoding with high quality."""
+        return EncodingSelection(
+            encoder_type="cpu",
+            quality_tier="high",
+            encoder_name="libx265",
+            encoder_settings=_get_encoder_settings("libx265"),
+        )
+
+    @pytest.fixture
+    def cpu_encoding_balanced(self):
+        """CPU encoding with balanced quality."""
+        return EncodingSelection(
+            encoder_type="cpu",
+            quality_tier="balanced",
+            encoder_name="libx265",
+            encoder_settings=_get_encoder_settings("libx265"),
+        )
+
+    @pytest.fixture
+    def cpu_encoding_fast(self):
+        """CPU encoding with fast quality."""
+        return EncodingSelection(
+            encoder_type="cpu",
+            quality_tier="fast",
+            encoder_name="libx265",
+            encoder_settings=_get_encoder_settings("libx265"),
+        )
+
     def test_builds_ffmpeg_command(self, mocker, mock_console, sample_playlist):
         """Test that ffmpeg command is built correctly."""
         mocker.patch("main._test_encoder", return_value=True)
@@ -32,7 +72,8 @@ class TestCompileMovie:
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "Auto (GPU if available)")
+        # None triggers auto-detection mode
+        compile_movie(sample_playlist, None)
 
         # Verify Popen was called
         import main
@@ -42,18 +83,16 @@ class TestCompileMovie:
         assert cmd[0] == "ffmpeg"
 
     def test_uses_hevc_videotoolbox_when_available(
-        self, mocker, mock_console, sample_playlist
+        self, mocker, mock_console, sample_playlist, gpu_encoding_balanced
     ):
-        """Test that HEVC VideoToolbox is used when available."""
-        mocker.patch("main._test_encoder", return_value=True)
-
+        """Test that HEVC VideoToolbox is used when provided in EncodingSelection."""
         mock_popen = MagicMock()
         mock_popen.stdout = iter([])
         mock_popen.wait.return_value = None
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "Auto (GPU if available)")
+        compile_movie(sample_playlist, gpu_encoding_balanced)
 
         import main
 
@@ -62,19 +101,17 @@ class TestCompileMovie:
         encoder_idx = cmd.index("-c:v") + 1
         assert cmd[encoder_idx] == "hevc_videotoolbox"
 
-    def test_uses_libx265_for_manual_quality(
-        self, mocker, mock_console, sample_playlist
+    def test_uses_libx265_for_cpu_quality(
+        self, mocker, mock_console, sample_playlist, cpu_encoding_high
     ):
-        """Test that libx265 is used for manual quality selection."""
-        mocker.patch("main._test_encoder", return_value=True)
-
+        """Test that libx265 is used for CPU quality selection."""
         mock_popen = MagicMock()
         mock_popen.stdout = iter([])
         mock_popen.wait.return_value = None
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "High (best quality, slower)")
+        compile_movie(sample_playlist, cpu_encoding_high)
 
         import main
 
@@ -215,17 +252,17 @@ class TestCompileMovie:
 
         assert "pad=" in filter_str
 
-    def test_high_quality_uses_crf_20(self, mocker, mock_console, sample_playlist):
+    def test_high_quality_uses_crf_20(
+        self, mocker, mock_console, sample_playlist, cpu_encoding_high
+    ):
         """Test that high quality uses CRF 20."""
-        mocker.patch("main._test_encoder", return_value=False)  # Force CPU
-
         mock_popen = MagicMock()
         mock_popen.stdout = iter([])
         mock_popen.wait.return_value = None
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "High (best quality, slower)")
+        compile_movie(sample_playlist, cpu_encoding_high)
 
         import main
 
@@ -235,17 +272,17 @@ class TestCompileMovie:
         crf_idx = cmd.index("-crf") + 1
         assert cmd[crf_idx] == "20"
 
-    def test_balanced_quality_uses_crf_22(self, mocker, mock_console, sample_playlist):
+    def test_balanced_quality_uses_crf_22(
+        self, mocker, mock_console, sample_playlist, cpu_encoding_balanced
+    ):
         """Test that balanced quality uses CRF 22."""
-        mocker.patch("main._test_encoder", return_value=False)
-
         mock_popen = MagicMock()
         mock_popen.stdout = iter([])
         mock_popen.wait.return_value = None
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "Balanced (good quality)")
+        compile_movie(sample_playlist, cpu_encoding_balanced)
 
         import main
 
@@ -254,17 +291,17 @@ class TestCompileMovie:
         crf_idx = cmd.index("-crf") + 1
         assert cmd[crf_idx] == "22"
 
-    def test_fast_quality_uses_crf_24(self, mocker, mock_console, sample_playlist):
+    def test_fast_quality_uses_crf_24(
+        self, mocker, mock_console, sample_playlist, cpu_encoding_fast
+    ):
         """Test that fast quality uses CRF 24."""
-        mocker.patch("main._test_encoder", return_value=False)
-
         mock_popen = MagicMock()
         mock_popen.stdout = iter([])
         mock_popen.wait.return_value = None
         mock_popen.returncode = 0
         mocker.patch("main.subprocess.Popen", return_value=mock_popen)
 
-        compile_movie(sample_playlist, "Fast (preview quality)")
+        compile_movie(sample_playlist, cpu_encoding_fast)
 
         import main
 
@@ -346,3 +383,211 @@ class TestCompileMovie:
         result = compile_movie(sample_playlist)
 
         assert result is None
+
+    def test_rotation_90_applies_transpose(self, mocker, mock_console, tmp_path):
+        """Test that 90 degree rotation applies transpose=1 filter."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        playlist_data = {
+            "created": "2024-01-01T00:00:00",
+            "project_name": "rotation_test",
+            "filters": {
+                "start_date": "2024-01-01T00:00:00",
+                "end_date": "2024-01-01T23:59:59",
+            },
+            "videos": [
+                {
+                    "uuid": "rotated-uuid",
+                    "date": "2024-01-01T10:00:00",
+                    "duration": 30.0,
+                    "filename": "rotated.mov",
+                    "persons": [],
+                    "is_portrait": False,
+                    "width": 1920,
+                    "height": 1080,
+                    "path": "/path/to/video.mov",
+                    "rotation": 90,
+                }
+            ],
+        }
+
+        playlist_path = tmp_path / "playlist.json"
+        playlist_path.write_text(json.dumps(playlist_data))
+
+        mock_popen = MagicMock()
+        mock_popen.stdout = iter([])
+        mock_popen.wait.return_value = None
+        mock_popen.returncode = 0
+        mocker.patch("main.subprocess.Popen", return_value=mock_popen)
+
+        compile_movie(playlist_path)
+
+        import main
+
+        cmd = main.subprocess.Popen.call_args[0][0]
+        filter_idx = cmd.index("-filter_complex") + 1
+        filter_str = cmd[filter_idx]
+
+        assert "transpose=1" in filter_str
+
+    def test_rotation_180_applies_double_transpose(
+        self, mocker, mock_console, tmp_path
+    ):
+        """Test that 180 degree rotation applies transpose=1,transpose=1 filter."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        playlist_data = {
+            "created": "2024-01-01T00:00:00",
+            "project_name": "rotation_test",
+            "filters": {
+                "start_date": "2024-01-01T00:00:00",
+                "end_date": "2024-01-01T23:59:59",
+            },
+            "videos": [
+                {
+                    "uuid": "rotated-uuid",
+                    "date": "2024-01-01T10:00:00",
+                    "duration": 30.0,
+                    "filename": "rotated.mov",
+                    "persons": [],
+                    "is_portrait": False,
+                    "width": 1920,
+                    "height": 1080,
+                    "path": "/path/to/video.mov",
+                    "rotation": 180,
+                }
+            ],
+        }
+
+        playlist_path = tmp_path / "playlist.json"
+        playlist_path.write_text(json.dumps(playlist_data))
+
+        mock_popen = MagicMock()
+        mock_popen.stdout = iter([])
+        mock_popen.wait.return_value = None
+        mock_popen.returncode = 0
+        mocker.patch("main.subprocess.Popen", return_value=mock_popen)
+
+        compile_movie(playlist_path)
+
+        import main
+
+        cmd = main.subprocess.Popen.call_args[0][0]
+        filter_idx = cmd.index("-filter_complex") + 1
+        filter_str = cmd[filter_idx]
+
+        assert "transpose=1,transpose=1" in filter_str
+
+    def test_rotation_270_applies_transpose_2(self, mocker, mock_console, tmp_path):
+        """Test that 270 degree rotation applies transpose=2 filter."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        playlist_data = {
+            "created": "2024-01-01T00:00:00",
+            "project_name": "rotation_test",
+            "filters": {
+                "start_date": "2024-01-01T00:00:00",
+                "end_date": "2024-01-01T23:59:59",
+            },
+            "videos": [
+                {
+                    "uuid": "rotated-uuid",
+                    "date": "2024-01-01T10:00:00",
+                    "duration": 30.0,
+                    "filename": "rotated.mov",
+                    "persons": [],
+                    "is_portrait": False,
+                    "width": 1920,
+                    "height": 1080,
+                    "path": "/path/to/video.mov",
+                    "rotation": 270,
+                }
+            ],
+        }
+
+        playlist_path = tmp_path / "playlist.json"
+        playlist_path.write_text(json.dumps(playlist_data))
+
+        mock_popen = MagicMock()
+        mock_popen.stdout = iter([])
+        mock_popen.wait.return_value = None
+        mock_popen.returncode = 0
+        mocker.patch("main.subprocess.Popen", return_value=mock_popen)
+
+        compile_movie(playlist_path)
+
+        import main
+
+        cmd = main.subprocess.Popen.call_args[0][0]
+        filter_idx = cmd.index("-filter_complex") + 1
+        filter_str = cmd[filter_idx]
+
+        assert "transpose=2" in filter_str
+
+    def test_no_rotation_no_transpose(self, mocker, mock_console, sample_playlist):
+        """Test that videos without rotation don't have transpose filter."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        mock_popen = MagicMock()
+        mock_popen.stdout = iter([])
+        mock_popen.wait.return_value = None
+        mock_popen.returncode = 0
+        mocker.patch("main.subprocess.Popen", return_value=mock_popen)
+
+        compile_movie(sample_playlist)
+
+        import main
+
+        cmd = main.subprocess.Popen.call_args[0][0]
+        filter_idx = cmd.index("-filter_complex") + 1
+        filter_str = cmd[filter_idx]
+
+        assert "transpose" not in filter_str
+
+    def test_portrait_with_rotation(self, mocker, mock_console, tmp_path):
+        """Test that portrait videos with rotation apply both blur and transpose."""
+        mocker.patch("main._test_encoder", return_value=True)
+
+        playlist_data = {
+            "created": "2024-01-01T00:00:00",
+            "project_name": "portrait_rotation_test",
+            "filters": {
+                "start_date": "2024-01-01T00:00:00",
+                "end_date": "2024-01-01T23:59:59",
+            },
+            "videos": [
+                {
+                    "uuid": "portrait-rotated-uuid",
+                    "date": "2024-01-01T10:00:00",
+                    "duration": 30.0,
+                    "filename": "portrait_rotated.mov",
+                    "persons": [],
+                    "is_portrait": True,
+                    "width": 1080,
+                    "height": 1920,
+                    "path": "/path/to/video.mov",
+                    "rotation": 90,
+                }
+            ],
+        }
+
+        playlist_path = tmp_path / "playlist.json"
+        playlist_path.write_text(json.dumps(playlist_data))
+
+        mock_popen = MagicMock()
+        mock_popen.stdout = iter([])
+        mock_popen.wait.return_value = None
+        mock_popen.returncode = 0
+        mocker.patch("main.subprocess.Popen", return_value=mock_popen)
+
+        compile_movie(playlist_path)
+
+        import main
+
+        cmd = main.subprocess.Popen.call_args[0][0]
+        filter_idx = cmd.index("-filter_complex") + 1
+        filter_str = cmd[filter_idx]
+
+        # Should have both blur (portrait) and transpose (rotation)
+        assert "gblur" in filter_str
+        assert "transpose=1" in filter_str

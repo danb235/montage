@@ -36,7 +36,11 @@ class TestMainWorkflow:
         mocker.patch("main.filter_by_duration", return_value=mock_video_list[:2])
 
         mock_confirm = mocker.patch("main.questionary.confirm")
-        mock_confirm.return_value.ask.side_effect = [True, True]
+        # Confirm prompts in order:
+        # 1. "Preview and select videos individually?" -> No (skip preview)
+        # 2. "Proceed to copy videos?" -> Yes
+        # 3. "Generate final movie now?" -> Yes
+        mock_confirm.return_value.ask.side_effect = [False, True, True]
 
         mock_text = mocker.patch("main.questionary.text")
         mock_text.return_value.ask.return_value = "test_project"
@@ -184,7 +188,8 @@ class TestMainWorkflow:
         mocker.patch("main.display_video_summary")
 
         mock_confirm = mocker.patch("main.questionary.confirm")
-        mock_confirm.return_value.ask.return_value = True
+        # First: skip interactive preview, Second: proceed to copy
+        mock_confirm.return_value.ask.side_effect = [False, True]
 
         mocker.patch("main.export_videos", return_value={})  # No videos exported
 
@@ -215,8 +220,8 @@ class TestMainWorkflow:
         )
 
         mock_confirm = mocker.patch("main.questionary.confirm")
-        # First confirm (copy videos): True, Second confirm (generate movie): False
-        mock_confirm.return_value.ask.side_effect = [True, False]
+        # First: skip interactive, Second: proceed to copy, Third: skip movie generation
+        mock_confirm.return_value.ask.side_effect = [False, True, False]
 
         mock_text = mocker.patch("main.questionary.text")
         mock_text.return_value.ask.return_value = "test_project"
