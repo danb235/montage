@@ -459,7 +459,7 @@ def prompt_quality_selection() -> EncodingSelection:
     selection = questionary.select(
         "Encoding quality:",
         choices=choices,
-        default=default,  # type: ignore[arg-type]
+        default=default,
     ).ask()
 
     if selection is None:
